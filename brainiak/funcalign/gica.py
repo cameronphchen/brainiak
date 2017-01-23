@@ -204,7 +204,7 @@ class GICA(BaseEstimator, TransformerMixin):
         # zscore the data
         bY = np.zeros((nTR,nvoxel,nsubjs))
         for m in range(nsubjs):
-            bY[:,:,m] = stats.zscore(data[m].T ,axis=0, ddof=1)
+            bY[:,:,m] = stats.zscore(data[m].T, axis=0, ddof=1)
         
         # First PCA
         Fi = np.zeros((nTR,nfeature,nsubjs))
@@ -231,7 +231,7 @@ class GICA(BaseEstimator, TransformerMixin):
             AIC[N] = -2*nvoxel*(nfeature*nsubjs-N-1)*L_N + 2*(1+(N+1)*nfeature+N/2)
             MDL[N] = -nvoxel*(nfeature*nsubjs-N-1)*L_N + 0.5*(1+(N+1)*nfeature+N/2)*np.log(nvoxel)
         
-        nfeat2 = int(round(np.mean([np.argmin(AIC), np.argmin(MDL)])))+1 # N
+        nfeat2 = nfeature #int(round(np.mean([np.argmin(AIC), np.argmin(MDL)])))+1 # N
         
         # Second PCA
         G = U[:,range(nfeat2)]
@@ -242,7 +242,7 @@ class GICA(BaseEstimator, TransformerMixin):
         np.random.seed(randseed) # randseed = 0
         tmp = np.mat(np.random.random((nfeat2,nfeat2)))
         
-        ica = FastICA(n_components= nfeat2, max_iter=500,w_init=tmp,whiten=False,random_state=randseed)
+        ica = FastICA(n_components= nfeat2, max_iter=500,w_init=tmp, whiten=False, random_state=randseed)
         St = ica.fit_transform(X.T)
         S = St.T
         A = ica.mixing_
@@ -257,9 +257,11 @@ class GICA(BaseEstimator, TransformerMixin):
 
         # Forming the factorization matrices such that Yi.T = bWi*bSi
         bW = []
-        bS = []
+        bS = np.zeros((nfeature, nTR))
         for m in range(nsubjs):
             bW.append(Si[:,:,m].T)
-            bS.append((Fi[:,:,m].dot(Gi[:,:,m]).dot(A)).T)
+            bS += (Fi[:,:,m].dot(Gi[:,:,m]).dot(A)).T
+            #bS.append((Fi[:,:,m].dot(Gi[:,:,m]).dot(A)).T)
+        bS /= nsubjs
         
         return bW, bS
