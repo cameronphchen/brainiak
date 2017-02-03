@@ -199,95 +199,66 @@ class GICA(BaseEstimator, TransformerMixin):
         [nvoxel, nTR] = data[0].shape
         nsubjs = len(data)
         nfeature = self.features
-        if nfeature <= 0:
-            raise ValueError("Number of features not valid.")
-        # zscore the data and put data in an array
-        bY = np.zeros((nvoxel,nTR,nsubjs))
-        for m in range(nsubjs):
-            bY[:,:,m] = np.nan_to_num(stats.zscore(data[m].T ,axis=0, ddof=1).T)
-        del data        
-
+        
         # First PCA
-        nfeat1 = int(nvoxel/2)
-        for m in range(nsubjs):
-            r = np.linalg.matrix_rank(bY[:,:,m])
-            if r == 0:
-                raise ValueError("Subject {} is of rank 0.".format(m))
-            if r < nfeat1:
-                nfeat1 = copy.copy(r)
-
-        Fi = np.zeros((nvoxel,nfeat1,nsubjs))
-        Xi = np.zeros((nfeat1,nTR,nsubjs))
-        X_stack = np.zeros((nfeat1*nsubjs,nTR))
+        Fi = np.zeros((nTR,nfeature,nsubjs))
+        Xi = np.zeros((nfeature,nvoxel,nsubjs))
+        X_stack = np.zeros((nfeature*nsubjs,nvoxel))
         
         for m in range(nsubjs):
-            try:
-                U, s, VT = np.linalg.svd(bY[:,:,m], full_matrices=False)        
-                Fi[:,:,m] = U[:,range(nfeat1)]
-                Xi[:,:,m] = np.diag(s[range(nfeat1)]).dot(VT[range(nfeat1),:])
-            except np.linalg.linalg.LinAlgError:
-                Fi[:,:,m] = np.eye(nvoxel,nfeat1)
-                Xi[:,:,m] = bY[range(nfeat1),:,m]
-
-            X_stack[m*nfeat1:(m+1)*nfeat1,:] = Xi[:,:,m]
+            U, s, VT = np.linalg.svd(data[m].T, full_matrices=False)
+            Fi[:,:,m] = U[:,:nfeature]
+            Xi[:,:,m] = np.diag(s[:nfeature]).dot(VT[:nfeature,:])
+            X_stack[m*nfeature:(m+1)*nfeature,:] = Xi[:,:,m]
 
         # Choose N for second PCA
-        try:
-            U, s, VT = np.linalg.svd(X_stack, full_matrices=False)
-            r = len(s)
+        U, s, VT = np.linalg.svd(X_stack, full_matrices=False)
+        # r = np.linalg.matrix_rank(X_stack)
+        # AIC  = np.zeros((r-1))
+        # MDL = np.zeros((r-1))
+        # tmp1 = 1.0
+        # tmp2 = 0.0
+        # for N in range(r-2,-1,-1):
+        #     tmp1 = tmp1*s[N+1]
+        #     tmp2 = tmp2+s[N+1]
+        #     L_N = np.log(tmp1**(1/(r-1-N))/((tmp2/(r-1-N))))
+        #     AIC[N] = -2*nvoxel*(nfeature*nsubjs-N-1)*L_N + 2*(1+(N+1)*nfeature+N/2)
+        #     MDL[N] = -nvoxel*(nfeature*nsubjs-N-1)*L_N + 0.5*(1+(N+1)*nfeature+N/2)*np.log(nvoxel)
         
-            nfeat2 = nfeature
-            # nfeat2 = nfeature*nsubjs/3
-            if r < nfeat2:
-                nfeat2 = copy.copy(r-1)
-
-            # AIC  = np.zeros((r-1))
-            # MDL = np.zeros((r-1))
-            # tmp1 = 1.0
-            # tmp2 = 0.0
-            # for N in range(r-2,-1,-1):
-            #     tmp1 = tmp1*s[N+1]
-            #     tmp2 = tmp2+s[N+1]
-            #     L_N = np.log(tmp1**(1/(r-1-N))/((tmp2/(r-1-N))))
-            #     AIC[N] = -2*nvoxel*(nfeature*nsubjs-N-1)*L_N + 2*(1+(N+1)*nfeature+N/2)
-            #     MDL[N] = -nvoxel*(nfeature*nsubjs-N-1)*L_N + 0.5*(1+(N+1)*nfeature+N/2)*np.log(nvoxel)
-            
-            #nfeat2 = int(round(np.mean([np.argmin(AIC), np.argmin(MDL)])))+1 # N
-
+        #nfeat2 = int(round(np.mean([np.argmin(AIC), np.argmin(MDL)])))+1 # N
+        nfeat2 = nfeature 
         
-            # Second PCA
-            G = U[:,range(nfeat2)]
-            X = np.diag(s[range(nfeat2)]).dot(VT[range(nfeat2),:]) # N-by-TR
-
-        except np.linalg.linalg.LinAlgError:
-            G = np.eye(nfeature*nsubjs,nfeature)
-            X = X_stack[range(nfeature),:]
-            nfeat2 = copy.copy(nfeature) 
-
+        # Second PCA
+        G = U[:,:nfeat2]
+        X = np.diag(s[:nfeat2]).dot(VT[:nfeat2,:]) # N-by-V
+        
         # ICA
-        np.random.seed(self.rand_seed)
+        np.random.seed(self.rand_seed) 
         tmp = np.mat(np.random.random((nfeat2,nfeat2)))
-        try:
-            print('whiten is false')
-            ica = FastICA(n_components= nfeat2, max_iter=500,w_init=tmp,whiten=False,random_state=self.rand_seed)
-            X = np.nan_to_num(X)
-            St = ica.fit_transform(X.T)
-            ES = St.T
-            A = ica.mixing_
-        except (ValueError, np.linalg.linalg.LinAlgError):
-            A = np.eye(nfeat2)
-            ES = np.zeros((nfeat2,nTR))
+        
+        print('whiten is false')
+        ica = FastICA(n_components= nfeat2, max_iter=500, w_init=tmp, whiten=False, random_state=self.rand_seed)
+        #print('whiten is true')
+        #ica = FastICA(n_components= nfeat2, max_iter=500, w_init=tmp, whiten=True, random_state=self.rand_seed)
+        St = ica.fit_transform(X.T)
+        S = St.T
+        A = ica.mixing_
 
         # Partitioning
-        Gi = np.zeros((nfeat1,nfeat2,nsubjs))
-        Wi = np.zeros((nvoxel,nfeat2,nsubjs))
+        Gi = np.zeros((nfeature,nfeat2,nsubjs))
+        Si = np.zeros((nfeat2,nvoxel,nsubjs))
+
+        for m in range(nsubjs):
+            Gi[:,:,m] = G[m*nfeature:(m+1)*nfeature,:]
+            Si[:,:,m] = np.linalg.pinv(Gi[:,:,m].dot(A)).dot(Xi[:,:,m])
+
+        # Forming the factorization matrices such that Yi.T = bWi*bSi
         bW = []
-
+        bS = []
         for m in range(nsubjs):
-            Gi[:,:,m] = G[m*nfeat1:(m+1)*nfeat1,:]
-            Wi[:,:,m] = Fi[:,:,m].dot(Gi[:,:,m]).dot(A)
-
-        for m in range(nsubjs):
-            bW.append(np.nan_to_num(Wi[:,:,m]))
+            #bW.append(St)
+            bW.append(Si[:,:,m].T)
+            #bS += (Fi[:,:,m].dot(Gi[:,:,m]).dot(A)).T
+            bS.append((Fi[:,:,m].dot(Gi[:,:,m]).dot(A)).T)
         
-        return bW, ES
+        return bW, bS
